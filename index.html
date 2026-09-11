@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <title>JARVIS // Interface</title>
+    <style>
+      :root { color: #f9cb72; background: #000; font-family: "Segoe UI", Inter, Arial, sans-serif; }
+      * { box-sizing: border-box; }
+      html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #000; }
+      body::before {
+        content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+        background: radial-gradient(ellipse at center, #160b030d 0%, transparent 42%), radial-gradient(ellipse at 50% 45%, #0b050111, #000 72%);
+      }
+      canvas { position: fixed; inset: 0; z-index: 2; display: block; width: 100%; height: 100%; pointer-events: none; mix-blend-mode: screen; }
+
+      /* This remains behind the WebGL canvas: the black pixels of the canvas are screen-blended, so the transcript is only revealed around the hologram. */
+      #transcript {
+        position: fixed; inset: 0; z-index: 1; pointer-events: auto; overflow: hidden;
+        padding: clamp(28px, 6vw, 96px); opacity: .92;
+        background: linear-gradient(90deg, rgba(0,0,0,.76), transparent 34%, transparent 66%, rgba(0,0,0,.76));
+      }
+      #transcript::before, #transcript::after {
+        content: ""; position: absolute; top: 13%; bottom: 13%; width: 1px; opacity: .35;
+        background: linear-gradient(transparent, #d8862377 13%, #f7bd5f88 50%, #d8862377 87%, transparent);
+        box-shadow: 0 0 12px #d6812244;
+      }
+      #transcript::before { left: clamp(25px, 10vw, 170px); }
+      #transcript::after { right: clamp(25px, 10vw, 170px); }
+      .log {
+        position: absolute; top: 50%; width: min(26vw, 405px); max-height: 68vh; overflow: auto;
+        scrollbar-width: none; mask-image: linear-gradient(transparent, #000 8%, #000 92%, transparent);
+        transform: translateY(-50%); padding: 28px 16px;
+      }
+      .log::-webkit-scrollbar { display: none; }
+      .log.left { left: clamp(34px, 10vw, 180px); }
+      .log.right { right: clamp(34px, 10vw, 180px); text-align: right; }
+      .message { position: relative; margin: 0 0 24px; color: #c17b2bc0; font-size: clamp(10px, .75vw, 13px); line-height: 1.55; letter-spacing: .075em; text-shadow: 0 0 13px #ff951822; animation: materialize .8s ease both; }
+      .message::before { content: ""; position: absolute; top: .25em; width: 20px; height: 1px; background: currentColor; box-shadow: 0 0 8px currentColor; opacity: .58; }
+      .left .message::before { right: calc(100% + 10px); }
+      .right .message::before { left: calc(100% + 10px); }
+      .message .tag { display: block; margin-bottom: 4px; color: #f2b554; font: 600 8px/1 "Consolas", monospace; letter-spacing: .24em; opacity: .7; }
+      .message.user { color: #9b6d39a8; }
+      .message.assistant { color: #d68c2dcb; }
+      .message.system { color: #8f5d2590; }
+      @keyframes materialize { from { opacity: 0; transform: translateY(8px); filter: blur(5px); } to { opacity: 1; transform: none; filter: blur(0); } }
+
+      #controls { position: fixed; z-index: 4; right: clamp(18px, 2.4vw, 44px); bottom: clamp(18px, 2.8vw, 46px); display: grid; gap: 9px; }
+      .control {
+        appearance: none; border: 1px solid #eaaa4c62; width: 42px; height: 42px; padding: 0; cursor: pointer;
+        color: #ffd58e; background: linear-gradient(135deg, #5a2e0d2b, #13090266); backdrop-filter: blur(8px);
+        box-shadow: inset 0 0 14px #ff9e2820, 0 0 15px #ff9b2020; transition: .25s ease;
+      }
+      .control:hover, .control:focus-visible { outline: none; border-color: #ffd172bb; background: #7a3b0c50; box-shadow: inset 0 0 16px #ffb34244, 0 0 22px #ff9b3155; transform: translateY(-2px); }
+      .control:active { transform: translateY(0) scale(.94); }
+      .control svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.35; stroke-linecap: square; stroke-linejoin: miter; }
+      #status { position: fixed; z-index: 4; left: clamp(18px, 2.4vw, 44px); bottom: clamp(28px, 3.2vw, 52px); color: #df9d4890; font: 10px/1 "Consolas", monospace; letter-spacing: .2em; text-transform: uppercase; transition: color .3s; }
+      #status::before { content: ""; display: inline-block; width: 5px; height: 5px; margin: 0 8px 1px 0; border-radius: 50%; background: currentColor; box-shadow: 0 0 9px currentColor; }
+      #status[data-state="listening"], #status[data-state="speaking"] { color: #ffd470; }
+      #status[data-state="processing"] { color: #fff0bc; }
+      @media (max-width: 760px) { .log { width: 34vw; font-size: 9px; } .log.left { left: 7vw; } .log.right { right: 7vw; } #transcript::before { left: 4vw; } #transcript::after { right: 4vw; } }
+    </style>
+  </head>
+  <body>
+    <section id="transcript" aria-label="Jarvis Gesprächsverlauf">
+      <div class="log left" id="assistant-log"></div>
+      <div class="log right" id="user-log"></div>
+    </section>
+    <div id="status" data-state="idle">System bereit</div>
+    <nav id="controls" aria-label="Jarvis Steuerung">
+      <button class="control" id="stop" type="button" aria-label="Jarvis stoppen" title="Jarvis stoppen">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" /></svg>
+      </button>
+      <button class="control" id="fullscreen" type="button" aria-label="Vollbild aktivieren" title="Vollbild (F)">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" /></svg>
+      </button>
+    </nav>
+    <script type="importmap">
+      { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.168.0/build/three.module.js" } }
+    </script>
+    <script type="module">
+      import * as THREE from 'three';
+      import { EffectComposer } from 'https://cdn.jsdelivr.net/npm/three@0.168.0/examples/jsm/postprocessing/EffectComposer.js';
+      import { RenderPass } from 'https://cdn.jsdelivr.net/npm/three@0.168.0/examples/jsm/postprocessing/RenderPass.js';
+      import { UnrealBloomPass } from 'https://cdn.jsdelivr.net/npm/three@0.168.0/examples/jsm/postprocessing/UnrealBloomPass.js';
+      import { OutputPass } from 'https://cdn.jsdelivr.net/npm/three@0.168.0/examples/jsm/postprocessing/OutputPass.js';
+
+      const GOLD = new THREE.Color(0xff9f1e), AMBER = new THREE.Color(0xd64c09), PALE = new THREE.Color(0xffe9ad), COPPER = new THREE.Color(0x8f2607);
+      const clock = new THREE.Clock();
+      const scene = new THREE.Scene();
+      scene.fog = new THREE.FogExp2(0x040100, .036);
+      const camera = new THREE.PerspectiveCamera(34, innerWidth / innerHeight, .1, 100);
+      camera.position.set(0, .08, 24.5);
+      const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance', stencil: false });
+      renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+      renderer.setSize(innerWidth, innerHeight); renderer.setClearColor(0x000000, 0);
+      renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.1;
+      document.body.appendChild(renderer.domElement);
+      const composer = new EffectComposer(renderer);
+      composer.addPass(new RenderPass(scene, camera));
+      const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), .86, .54, .74);
+      composer.addPass(bloom); composer.addPass(new OutputPass());
+
+      const root = new THREE.Group(), outer = new THREE.Group(), mechanisms = new THREE.Group(), core = new THREE.Group(), motes = new THREE.Group();
+      root.add(outer, mechanisms, core, motes); scene.add(root);
+      const hash = n => { const x = Math.sin(n * 91.723 + 4.317) * 45678.234; return x - Math.floor(x); };
+      const point = (r, t, p) => new THREE.Vector3(r * Math.sin(t) * Math.cos(p), r * Math.cos(t), r * Math.sin(t) * Math.sin(p));
+      const spriteTexture = (() => {
+        const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
+        const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+        grad.addColorStop(0, '#fff9e8'); grad.addColorStop(.055, '#ffe2a0'); grad.addColorStop(.19, '#ffac30cc'); grad.addColorStop(.48, '#f6650b36'); grad.addColorStop(1, '#f6650b00');
+        g.fillStyle = grad; g.fillRect(0, 0, 128, 128); const texture = new THREE.CanvasTexture(c); texture.colorSpace = THREE.SRGBColorSpace; return texture;
+      })();
+      const line = (color, opacity, width = 1) => new THREE.LineBasicMaterial({ color, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: true, linewidth: width, fog: true });
+      function polyline(parent, pts, color, opacity) { const object = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), line(color, opacity)); parent.add(object); return object; }
+      function arc(radius, start, extent, offset = 0, count = 80) {
+        const pts = []; for (let i = 0; i <= count; i++) { const a = start + extent * i / count; pts.push(new THREE.Vector3(Math.cos(a) * radius, offset, Math.sin(a) * radius)); } return pts;
+      }
+      function irregularArc(parent, radius, start, extent, color, opacity, seed, y = 0) {
+        const pts = []; const count = Math.max(14, Math.ceil(extent * 20));
+        for (let i = 0; i <= count; i++) { const a = start + extent * i / count; const wobble = Math.sin(a * (4 + hash(seed) * 5) + seed) * (.012 + hash(seed + 1) * .028); pts.push(new THREE.Vector3(Math.cos(a) * (radius + wobble), y + Math.sin(a * 6 + seed) * .022, Math.sin(a) * (radius + wobble))); }
+        return polyline(parent, pts, color, opacity);
+      }
+      function makeBand(seed, radius, inner = false) {
+        const g = new THREE.Group(); g.rotation.set((hash(seed * 2) - .5) * 2.75, (hash(seed * 3) - .5) * 1.4, (hash(seed * 5) - .5) * 2.75);
+        const pieces = inner ? 3 + Math.floor(hash(seed) * 3) : 2 + Math.floor(hash(seed) * 4);
+        for (let j = 0; j < pieces; j++) { const start = hash(seed * 7 + j) * 6.28, extent = .35 + hash(seed * 11 + j) * (inner ? 2.4 : 1.7); irregularArc(g, radius + (hash(seed * 13 + j) - .5) * .11, start, extent, j % 5 === 0 ? PALE : (j % 3 ? GOLD : COPPER), .06 + hash(seed * 17 + j) * (inner ? .32 : .20), seed + j * 4.1); }
+        g.userData.spin = (hash(seed * 19) - .5) * .5; g.userData.axis = ['x','y','z'][Math.floor(hash(seed * 23) * 3)]; return g;
+      }
+      const bands = [], innerBands = [];
+      for (let i = 0; i < 42; i++) { const b = makeBand(11 + i, 4.58 + (hash(i * 7) - .5) * 1.02); bands.push(b); outer.add(b); }
+      for (let i = 0; i < 31; i++) { const b = makeBand(91 + i, 1.65 + hash(i * 17) * 2.2, true); innerBands.push(b); mechanisms.add(b); }
+      const shellGeo = new THREE.IcosahedronGeometry(5.1, 3); const shell = new THREE.LineSegments(new THREE.WireframeGeometry(shellGeo), line(COPPER, .055)); outer.add(shell);
+      for (let i = 0; i < 80; i++) { const a = hash(i * 31) * Math.PI, p = hash(i * 37) * 6.28, r = 4.76 + (hash(i * 41) - .5) * .5; const centre = point(r, a, p); const tangent = new THREE.Vector3(-Math.sin(p), 0, Math.cos(p)).normalize().multiplyScalar(.08 + hash(i * 43) * .34); polyline(outer, [centre.clone().sub(tangent), centre.clone().add(tangent)], i % 8 === 0 ? PALE : GOLD, .06 + hash(i * 47) * .24); }
+      for (let i = 0; i < 44; i++) { const theta = Math.acos(1 - 2 * hash(i * 53)), phi = hash(i * 59) * 6.28, start = point(1.35 + hash(i * 61) * 2.2, theta, phi), end = point(3.3 + hash(i * 67) * 1.3, theta + (hash(i * 71) - .5) * .35, phi + (hash(i * 73) - .5) * .35); polyline(mechanisms, [start, start.clone().lerp(end, .5).multiplyScalar(.92), end], i % 10 === 0 ? PALE : AMBER, .08 + hash(i * 79) * .21); }
+      const particleMaterial = (color, opacity, size) => new THREE.ShaderMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, uniforms: { uTime: { value: 0 }, uColor: { value: color }, uOpacity: { value: opacity }, uSize: { value: size * renderer.getPixelRatio() } }, vertexShader: `attribute float aSize; attribute float aPhase; uniform float uTime; uniform float uSize; varying float vGlow; void main(){ vec3 p=position; p += normalize(position) * sin(uTime * .9 + aPhase) * .018; vec4 mv=modelViewMatrix*vec4(p,1.); gl_PointSize=max(1.0,aSize*uSize*(260.0/-mv.z)); gl_Position=projectionMatrix*mv; vGlow=.55+.45*sin(uTime*1.3+aPhase); }`, fragmentShader: `uniform vec3 uColor; uniform float uOpacity; varying float vGlow; void main(){ float d=length(gl_PointCoord-.5); float a=smoothstep(.5,.04,d)*uOpacity*vGlow; gl_FragColor=vec4(uColor,a); }` });
+      function dustCloud(parent, count, radius, variance, size, color, opacity, phase) {
+        const pos = new Float32Array(count * 3), scale = new Float32Array(count), phases = new Float32Array(count);
+        for (let i = 0; i < count; i++) { const theta = Math.acos(1 - 2 * hash(i * 67 + phase)), phi = hash(i * 71 + phase) * 6.283, r = radius + (hash(i * 73 + phase) - .5) * variance, p = point(r, theta, phi); pos.set([p.x,p.y,p.z], i * 3); scale[i] = .4 + hash(i * 79 + phase) * 1.6; phases[i] = hash(i * 83 + phase) * 6.283; }
+        const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('aSize', new THREE.BufferAttribute(scale, 1)); geo.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1));
+        const points = new THREE.Points(geo, particleMaterial(color, opacity, size)); parent.add(points); return points;
+      }
+      const fields = [dustCloud(outer, 920, 5.12, .46, 1.1, GOLD, .68, 1), dustCloud(mechanisms, 530, 3.42, 3.25, 1.3, AMBER, .65, 2), dustCloud(core, 420, 1.24, 1.68, 1.8, PALE, .80, 3), dustCloud(motes, 250, 6.3, 3.6, .72, AMBER, .25, 4)];
+      const coreCage = new THREE.Mesh(new THREE.IcosahedronGeometry(1.06, 3), new THREE.MeshBasicMaterial({ color: GOLD, wireframe: true, transparent: true, opacity: .16, blending: THREE.AdditiveBlending, depthWrite: false })); core.add(coreCage);
+      const filamentGroup = new THREE.Group(); core.add(filamentGroup);
+      for (let i = 0; i < 38; i++) { const pts = [], phase = i / 38 * Math.PI * 2, loops = 1.3 + hash(i * 89) * 2.7; for (let k = 0; k < 92; k++) { const t = k / 91 * Math.PI * 2; const r = .22 + .77 * (.5 + .5 * Math.sin(t * loops + phase * 3)) + Math.sin(t * 9 + phase) * .06; pts.push(new THREE.Vector3(Math.cos(t + phase) * r, Math.sin(t * (1.7 + hash(i * 97)) + phase) * r * (.4 + hash(i * 101) * .5), Math.sin(t + phase) * r)); } polyline(filamentGroup, pts, i % 9 === 0 ? PALE : (i % 3 ? GOLD : AMBER), .13 + hash(i * 103) * .38); }
+      for (let i = 0; i < 54; i++) { const a = point(.5 + hash(i * 107) * .62, Math.acos(1 - 2 * hash(i * 109)), hash(i * 113) * 6.28), b = point(1.2 + hash(i * 127) * 1.45, Math.acos(1 - 2 * hash(i * 131)), hash(i * 137) * 6.28); polyline(core, [a, a.clone().lerp(b, .38).addScaledVector(a.clone().cross(b).normalize(), .14), b], i % 7 === 0 ? PALE : GOLD, .13 + hash(i * 139) * .32); }
+      function glowSprite(color, scale, opacity) { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: spriteTexture, color, transparent: true, opacity, depthWrite: false, blending: THREE.AdditiveBlending })); s.scale.setScalar(scale); core.add(s); return s; }
+      const haze = glowSprite(AMBER, 5.8, .095), corona = glowSprite(GOLD, 3.1, .36), heart = glowSprite(PALE, .82, .98);
+      const rays = new THREE.Group(); core.add(rays);
+      for (let i = 0; i < 16; i++) { const theta = Math.acos(1 - 2 * hash(i * 149)), phi = hash(i * 151) * 6.28, start = point(.2 + hash(i) * .4, theta, phi), end = point(1.1 + hash(i * 157) * 1.7, theta + (hash(i * 163) - .5) * .25, phi + (hash(i * 167) - .5) * .25); polyline(rays, [start, end], i % 5 === 0 ? PALE : GOLD, .12 + hash(i * 173) * .36); }
+      const travelers = [];
+      for (let i = 0; i < 86; i++) { const dot = new THREE.Sprite(new THREE.SpriteMaterial({ map: spriteTexture, color: i % 11 === 0 ? PALE : GOLD, transparent: true, opacity: .9, depthWrite: false, blending: THREE.AdditiveBlending })); const radius = .85 + hash(i * 179) * 4.55; dot.scale.setScalar(.045 + hash(i * 181) * .13); motes.add(dot); travelers.push({ dot, radius, phase: hash(i * 191) * 6.283, speed: .065 + hash(i * 193) * .35, tilt: hash(i * 197) * Math.PI, lift: (hash(i * 199) - .5) * .75 }); }
+      const glowLight = new THREE.PointLight(0xff7a18, 2.6, 10, 2); scene.add(glowLight);
+      function render() {
+        requestAnimationFrame(render); const time = clock.getElapsedTime();
+        root.position.y = Math.sin(time * .42) * .13; root.rotation.y = time * .035; root.rotation.x = Math.sin(time * .13) * .045;
+        shell.rotation.y = -time * .022; shell.rotation.z = Math.sin(time * .17) * .025;
+        mechanisms.rotation.y = time * .071; mechanisms.rotation.z = -time * .019;
+        core.rotation.y = -time * .14; core.rotation.x = time * .053; filamentGroup.rotation.y = time * .23; filamentGroup.rotation.z = -time * .09; coreCage.rotation.y = -time * .12;
+        for (const band of bands) band.rotation[band.userData.axis] += band.userData.spin * .003;
+        for (const band of innerBands) band.rotation[band.userData.axis] += band.userData.spin * .004;
+        const beat = 1 + Math.sin(time * 1.2) * .04 + Math.sin(time * 3.3) * .015;
+        heart.scale.setScalar(.82 * beat); corona.scale.setScalar(3.1 * (1 + Math.sin(time * 1.1) * .035)); haze.scale.setScalar(5.8 * (1 + Math.sin(time * .72) * .04));
+        heart.material.opacity = .82 + Math.sin(time * 2.1) * .12; glowLight.intensity = 2.2 + Math.sin(time * 1.2) * .28;
+        fields.forEach((field, i) => { field.material.uniforms.uTime.value = time * (i === 3 ? .45 : 1); field.rotation.y = time * (.006 + i * .004); });
+        for (const item of travelers) { const a = item.phase + time * item.speed, p = new THREE.Vector3(Math.cos(a) * item.radius, item.lift + Math.sin(a * 1.73) * (.15 + item.radius * .07), Math.sin(a) * item.radius * (.72 + Math.sin(item.phase) * .2)); p.applyAxisAngle(new THREE.Vector3(1,0,0), item.tilt); item.dot.position.copy(p); item.dot.material.opacity = .3 + .64 * Math.pow(Math.sin(a * 2.7), 2); }
+        composer.render();
+      }
+      addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight); bloom.setSize(innerWidth, innerHeight); });
+      render();
+      const userLog = document.querySelector('#user-log'), assistantLog = document.querySelector('#assistant-log'), status = document.querySelector('#status');
+      const stateLabels = { idle: 'System bereit', listening: 'Hört zu', processing: 'Verarbeitet', speaking: 'Spricht', stopped: 'Ausgabe angehalten' };
+      const stateAliases = { waiting: 'idle', greeting: 'speaking', executing: 'processing', stopped: 'stopped' };
+      let abortController = null;
+      function setState(state = 'idle') { const requested = String(state).toLowerCase(); const normalized = stateAliases[requested] || (stateLabels[requested] ? requested : 'idle'); status.dataset.state = normalized; status.textContent = stateLabels[normalized]; document.dispatchEvent(new CustomEvent('jarvis:state-change', { detail: { state: normalized } })); }
+      function addMessage(role, text) { if (!text || !String(text).trim()) return; const destination = role === 'user' ? userLog : assistantLog; const article = document.createElement('article'); article.className = `message ${role === 'user' ? 'user' : 'assistant'}`; const tag = role === 'user' ? 'EINGABE // USER' : 'JARVIS // RESPONSE'; article.innerHTML = `<span class="tag">${tag}</span>`; article.append(document.createTextNode(String(text))); destination.append(article); while (destination.children.length > 7) destination.firstElementChild.remove(); destination.scrollTo({ top: destination.scrollHeight, behavior: 'smooth' }); }
+      function stopJarvis() { if (abortController && !abortController.signal.aborted) abortController.abort('Stopped by user'); if ('speechSynthesis' in window) speechSynthesis.cancel(); setState('stopped'); document.dispatchEvent(new CustomEvent('jarvis:stop')); window.dispatchEvent(new CustomEvent('jarvis:stop')); }
+      window.jarvisScene = Object.freeze({ addMessage, setState, setAbortController(controller) { abortController = controller || null; }, stop: stopJarvis });
+      document.addEventListener('jarvis:message', event => addMessage(event.detail?.role, event.detail?.text));
+      document.addEventListener('jarvis:state', event => setState(event.detail?.state));
+      document.addEventListener('jarvis:abort-controller', event => { abortController = event.detail?.controller || null; });
+      addMessage('assistant', 'Systeme online. Bereit für Eingabe.');
+      document.querySelector('#stop').addEventListener('click', stopJarvis);
+      const fullButton = document.querySelector('#fullscreen');
+      async function toggleFullscreen() { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); }
+      fullButton.addEventListener('click', toggleFullscreen);
+      document.addEventListener('fullscreenchange', () => { const active = Boolean(document.fullscreenElement); fullButton.setAttribute('aria-label', active ? 'Vollbild verlassen' : 'Vollbild aktivieren'); fullButton.title = active ? 'Vollbild verlassen (Esc)' : 'Vollbild (F)'; });
+      addEventListener('keydown', event => { if (event.key.toLowerCase() === 'f' && !event.ctrlKey && !event.metaKey && !event.altKey && event.target === document.body) { event.preventDefault(); toggleFullscreen(); } });
+    </script>
+  </body>
+</html>

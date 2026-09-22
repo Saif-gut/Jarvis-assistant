@@ -5,6 +5,7 @@ models/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.ruff_cache/
 .coverage
 htmlcov/
 build/
@@ -32,6 +33,10 @@ credentials.*
 *.log
 tmp/
 temp/
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
 .vscode/
 .idea/
 Thumbs.db
